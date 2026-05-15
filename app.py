@@ -124,6 +124,24 @@ def generate_mock_wells(lat, lon, num_wells=7):
         })
     return pd.DataFrame(wells)
 
+@st.cache_data
+def generate_mock_weather():
+    """최근 30일간의 모의 날씨 데이터 생성"""
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=30)
+    weather_data = []
+    temp = random.uniform(10.0, 25.0) 
+    for d in dates:
+        temp += random.uniform(-2.0, 2.0)
+        precip = 0 if random.random() > 0.3 else random.uniform(1.0, 40.0)
+        weather_data.append({
+            "날짜": d.date(),
+            "평균기온(℃)": round(temp, 1),
+            "강수량(mm)": round(precip, 1)
+        })
+    df = pd.DataFrame(weather_data)
+    df.set_index("날짜", inplace=True)
+    return df
+
 def render_map(m, height=400):
     """WebView에서 통신 오류(iframe 차단)를 방지하기 위해 순수 HTML로 지도를 렌더링합니다."""
     components.html(m._repr_html_(), height=height)
@@ -138,7 +156,7 @@ if address:
         else:
             st.success(f"위치 확인 완료! (위도: {lat:.4f}, 경도: {lon:.4f})")
         
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📍 기본 정보", "🌍 지질도", "🏗️ 토지이용", "🌊 수계도", "🚰 관정 정보"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📍 기본 정보", "🌍 지질도", "🏗️ 토지이용", "⛅ 지역 날씨", "🚰 관정 정보"])
         
         with tab1:
             st.header("📍 검색 위치 정보")
@@ -190,22 +208,20 @@ if address:
             render_map(m3, 400)
             
         with tab4:
-            st.header("🌊 수계도 (Water System Map)")
-            st.info("💡 하천 및 수계망 정보를 나타내는 섹션입니다. (추후 WAMIS 등과 연동 가능)")
-            st.markdown("아래는 시각화를 위한 **모의 하천 및 수계 레이어**입니다.")
+            st.header("⛅ 최근 한달 지역 날씨")
+            st.info("💡 **실제 데이터 소스:** 기상청 기상자료개방포털(ASOS/AWS) 데이터 연동 예정")
+            st.markdown("아래는 시각화를 위한 **최근 30일 모의 날씨 데이터**입니다. 기온 변화와 강수량을 확인할 수 있습니다.")
             
-            m4 = folium.Map(location=[lat, lon], zoom_start=14)
-            folium.PolyLine(
-                locations=[
-                    [lat+0.015, lon-0.01], [lat+0.005, lon-0.002], [lat, lon+0.005], [lat-0.01, lon+0.01]
-                ],
-                color="blue",
-                weight=6,
-                opacity=0.6,
-                tooltip="모의 주요 하천"
-            ).add_to(m4)
-            folium.Marker([lat, lon], tooltip="검색 위치", icon=folium.Icon(color='red')).add_to(m4)
-            render_map(m4, 400)
+            df_weather = generate_mock_weather()
+            
+            st.subheader("🌡️ 일별 평균 기온 추이")
+            st.line_chart(df_weather["평균기온(℃)"], color="#FF4B4B")
+            
+            st.subheader("🌧️ 일별 강수량")
+            st.bar_chart(df_weather["강수량(mm)"], color="#005f73")
+            
+            with st.expander("데이터 표 보기"):
+                st.dataframe(df_weather)
             
         with tab5:
             st.header("🚰 주변 지하수 관정 정보")
