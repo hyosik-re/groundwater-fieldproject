@@ -27,6 +27,42 @@ LANDUSE_STYLES = {
     "construction":("건설중","#ff9896"),"education":("교육시설","#aec7e8"),
     "cemetery":("묘지","#7f7f7f"),"military":("군사지역","#c5b0d5"),
 }
+LANDCOVER_GROUPS = {
+    "시가화·건조지역": [
+        (111,"단독주거시설",(254,230,194)), (112,"공동주거시설",(233,193,111)),
+        (121,"공업시설",(192,132,132)), (131,"상업·업무시설",(237,131,184)),
+        (132,"혼합지역",(223,176,164)), (141,"문화·체육·휴양시설",(246,113,138)),
+        (151,"공항",(229,38,254)), (152,"항만",(197,50,81)), (153,"철도",(252,4,78)),
+        (154,"도로",(247,65,42)), (155,"기타 교통·통신시설",(190,0,0)),
+        (161,"환경기초시설",(246,117,18)), (162,"교육·행정시설",(255,122,0)),
+        (163,"기타 공공시설",(199,88,27)),
+    ],
+    "농업지역": [
+        (211,"경지정리가 된 논",(255,255,191)), (212,"경지정리가 안 된 논",(244,230,168)),
+        (221,"경지정리가 된 밭",(247,249,102)), (222,"경지정리가 안 된 밭",(245,228,10)),
+        (231,"시설재배지",(223,220,115)), (241,"과수원",(184,177,44)),
+        (251,"목장·양식장",(184,145,18)), (252,"기타재배지",(170,100,0)),
+    ],
+    "산림지역": [
+        (311,"활엽수림",(51,160,44)), (321,"침엽수림",(10,79,64)), (331,"혼효림",(51,102,51)),
+    ],
+    "초지": [
+        (411,"자연초지",(161,213,148)), (421,"골프장",(128,228,90)),
+        (422,"묘지",(113,176,90)), (423,"기타초지",(96,126,51)),
+    ],
+    "습지·수변식생": [
+        (511,"내륙습지(수변식생)",(180,167,208)), (521,"갯벌",(153,116,153)),
+        (522,"염전",(124,30,162)),
+    ],
+    "나지": [
+        (611,"해변",(193,219,236)), (612,"강기슭",(171,197,202)),
+        (613,"암벽·바위",(171,182,165)), (621,"채광지역",(88,90,138)),
+        (622,"운동장",(123,181,172)), (623,"기타나지",(159,242,255)),
+    ],
+    "수역": [
+        (711,"하천",(62,167,255)), (712,"호소",(93,109,255)), (721,"해양수",(23,57,255)),
+    ],
+}
 
 st.set_page_config(page_title="AQUA · 지하수 공간정보", layout="wide", page_icon="◉")
 st.markdown("""<style>
@@ -57,12 +93,20 @@ hr{border-color:#dbe6e6!important}
 .weather-table th{position:sticky;top:0;background:#e7f1f0;color:#17464d;padding:.7rem;text-align:center;z-index:1}
 .weather-table td{padding:.62rem .7rem;border-top:1px solid #e8eeee;text-align:center;white-space:nowrap}
 .weather-table tr:nth-child(even){background:#f8fbfa}
+.lc-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:.5rem 0 1rem}
+.lc-group{background:#fff;border:1px solid #dce7e8;border-radius:14px;padding:13px 14px;box-shadow:0 5px 16px rgba(26,64,69,.045)}
+.lc-group-title{font-weight:700;color:#17464d;font-size:.9rem;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid #e7eeee}
+.lc-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px}
+.lc-item{display:flex;align-items:center;min-width:0;font-size:.78rem;color:#304b51;line-height:1.25}
+.lc-swatch{width:18px;height:18px;border-radius:4px;border:1px solid rgba(20,45,50,.25);margin-right:7px;flex:0 0 18px}
+.lc-code{font-size:.68rem;color:#7a8d91;margin-left:4px}
 @media(max-width:768px){.block-container{padding:1.2rem .9rem}.hero{padding:1.5rem}.hero-title{font-size:1.55rem}.stTabs [data-baseweb="tab"]{padding:0 .65rem;font-size:.78rem}}
+@media(max-width:900px){.lc-legend{grid-template-columns:1fr}.lc-items{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>""", unsafe_allow_html=True)
 
 st.markdown("""<div class="hero"><div class="hero-kicker">GROUNDWATER · SPATIAL INTELLIGENCE</div>
 <div class="hero-title">지하수 공간정보 대시보드</div>
-<p class="hero-copy">하나의 주소에서 지형·지질·토지이용·기상과 실제 등록 관정을 함께 탐색합니다. · Data & Legend Build 4</p></div>""", unsafe_allow_html=True)
+<p class="hero-copy">하나의 주소에서 지형·지질·토지이용·기상과 실제 등록 관정을 함께 탐색합니다. · Vector Legend Build 5</p></div>""", unsafe_allow_html=True)
 address = st.text_input("대한민국 주소 검색", value="대전광역시 유성구 과학로 124", placeholder="도로명 또는 지번 주소를 입력하세요")
 try:
     KIGAM_API_KEY = st.secrets.get("KIGAM_API_KEY", "")
@@ -318,6 +362,22 @@ def geology_color(value):
     palette = ["#547b72","#a56f59","#c49a55","#7d6b91","#6686a3","#8b9d62","#b67878","#4e8d8a"]
     return palette[int(hashlib.md5(str(value).encode()).hexdigest(), 16) % len(palette)]
 
+def landcover_legend_html():
+    groups = []
+    for group_name, items in LANDCOVER_GROUPS.items():
+        rows = []
+        for code, name, rgb in items:
+            color = f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+            rows.append(
+                f'<div class="lc-item"><span class="lc-swatch" style="background:{color}"></span>'
+                f'<span>{name}<span class="lc-code">{code}</span></span></div>'
+            )
+        groups.append(
+            f'<div class="lc-group"><div class="lc-group-title">{group_name}</div>'
+            f'<div class="lc-items">{"".join(rows)}</div></div>'
+        )
+    return f'<div class="lc-legend">{"".join(groups)}</div>'
+
 def render_map(m, height=450):
     components.html(m._repr_html_(), height=height)
 
@@ -372,7 +432,7 @@ if address:
 
         with tabs[3]:
             st.header("토지피복도")
-            st.markdown('<div class="source-note">환경부 환경공간정보서비스(EGIS)의 2025년 전국 세분류 토지피복지도를 표시합니다.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="source-note">환경부 환경공간정보서비스의 2025년 전국 세분류 토지피복지도입니다. 범례는 공식 41개 분류코드와 RGB 색상표를 사용합니다.</div>', unsafe_allow_html=True)
             with st.spinner("환경부 토지피복도를 불러오는 중..."):
                 landcover = get_egis_landcover_image(lat, lon)
             if landcover:
@@ -384,18 +444,14 @@ if address:
                 if land_render:
                     st.image(land_render, width="stretch")
                     st.success("2025년 전국 세분류 토지피복도를 표시했습니다.")
-                    legend = get_egis_landcover_legend()
-                    st.markdown("#### 토지피복 세분류 범례")
-                    if legend:
-                        legend_col, _ = st.columns([1, 2])
-                        legend_col.image(legend, width="stretch")
-                    else:
-                        st.warning("범례 이미지를 불러오지 못했습니다.")
+                    st.markdown("#### 토지피복 세분류 범례 · 41개 항목")
+                    st.markdown(landcover_legend_html(), unsafe_allow_html=True)
                 else:
                     st.error("토지피복도 이미지 합성에 실패했습니다.")
             else:
                 st.warning("환경부 토지피복 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
-            st.caption("빨간 점: 검색 위치 · 자료: 환경부 환경공간정보서비스(EGIS) 토지피복 세분류 2025 전국")
+            st.caption("빨간 점: 검색 위치 · 자료 및 분류색상: 환경부 환경공간정보서비스 토지피복지도")
+            st.link_button("환경부 토지피복지도 분류체계 보기", "https://aid.mcee.go.kr/intro/land.do")
 
         with tabs[4]:
             st.header("⛅ 날씨 및 대기질")
