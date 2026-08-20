@@ -1,0 +1,849 @@
+import streamlit as st
+import pandas as pd
+import geopandas as gpd
+import osmnx as ox
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from netgraph import Graph
+from shapely.geometry import Point
+import folium
+from folium.plugins import MarkerCluster
+from streamlit_folium import st_folium
+from geopy.geocoders import Nominatim
+import requests
+import hashlib
+import math
+from io import BytesIO
+from PIL import Image, ImageDraw
+from datetime import datetime, timedelta
+
+ox.settings.use_cache = True
+ox.settings.log_console = False
+ox.settings.requests_timeout = 45
+mpl.rcParams["font.family"] = ["Malgun Gothic", "DejaVu Sans"]
+mpl.rcParams["axes.unicode_minus"] = False
+
+WEATHER_CODES = {
+    0:("☀️","맑음"),1:("🌤️","대체로 맑음"),2:("⛅","구름 조금"),3:("☁️","흐림"),
+    45:("🌫️","안개"),48:("🌫️","안개"),51:("🌦️","이슬비"),53:("🌦️","이슬비"),55:("🌦️","이슬비"),
+    61:("🌧️","비"),63:("🌧️","비"),65:("🌧️","폭우"),71:("❄️","눈"),73:("❄️","눈"),75:("❄️","폭설"),
+    80:("🌧️","소나기"),81:("🌧️","소나기"),82:("🌧️","폭우"),
+    95:("⛈️","뇌우"),96:("⛈️","뇌우"),99:("⛈️","뇌우"),
+}
+LANDUSE_STYLES = {
+    "residential":("주거지역","#ff7f0e"),"commercial":("상업지역","#d62728"),
+    "industrial":("공업지역","#9467bd"),"retail":("소매지역","#e377c2"),
+    "farmland":("농경지","#bcbd22"),"farm":("농장","#b6b621"),
+    "forest":("산림","#2ca02c"),"grass":("초지","#98df8a"),
+    "meadow":("초지","#98df8a"),"orchard":("과수원","#8c564b"),
+    "basin":("수역","#1f77b4"),"reservoir":("저수지","#1f77b4"),
+    "construction":("건설중","#ff9896"),"education":("교육시설","#aec7e8"),
+    "cemetery":("묘지","#7f7f7f"),"military":("군사지역","#c5b0d5"),
+}
+LANDCOVER_GROUPS = {
+    "시가화·건조지역": [
+        (111,"단독주거시설",(254,230,194)), (112,"공동주거시설",(233,193,111)),
+        (121,"공업시설",(192,132,132)), (131,"상업·업무시설",(237,131,184)),
+        (132,"혼합지역",(223,176,164)), (141,"문화·체육·휴양시설",(246,113,138)),
+        (151,"공항",(229,38,254)), (152,"항만",(197,50,81)), (153,"철도",(252,4,78)),
+        (154,"도로",(247,65,42)), (155,"기타 교통·통신시설",(190,0,0)),
+        (161,"환경기초시설",(246,117,18)), (162,"교육·행정시설",(255,122,0)),
+        (163,"기타 공공시설",(199,88,27)),
+    ],
+    "농업지역": [
+        (211,"경지정리가 된 논",(255,255,191)), (212,"경지정리가 안 된 논",(244,230,168)),
+        (221,"경지정리가 된 밭",(247,249,102)), (222,"경지정리가 안 된 밭",(245,228,10)),
+        (231,"시설재배지",(223,220,115)), (241,"과수원",(184,177,44)),
+        (251,"목장·양식장",(184,145,18)), (252,"기타재배지",(170,100,0)),
+    ],
+    "산림지역": [
+        (311,"활엽수림",(51,160,44)), (321,"침엽수림",(10,79,64)), (331,"혼효림",(51,102,51)),
+    ],
+    "초지": [
+        (411,"자연초지",(161,213,148)), (421,"골프장",(128,228,90)),
+        (422,"묘지",(113,176,90)), (423,"기타초지",(96,126,51)),
+    ],
+    "습지·수변식생": [
+        (511,"내륙습지(수변식생)",(180,167,208)), (521,"갯벌",(153,116,153)),
+        (522,"염전",(124,30,162)),
+    ],
+    "나지": [
+        (611,"해변",(193,219,236)), (612,"강기슭",(171,197,202)),
+        (613,"암벽·바위",(171,182,165)), (621,"채광지역",(88,90,138)),
+        (622,"운동장",(123,181,172)), (623,"기타나지",(159,242,255)),
+    ],
+    "수역": [
+        (711,"하천",(62,167,255)), (712,"호소",(93,109,255)), (721,"해양수",(23,57,255)),
+    ],
+}
+
+st.set_page_config(page_title="AQUA · 지하수 공간정보", layout="wide", page_icon="◉")
+st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+:root{--ink:#102a33;--muted:#667b82;--aqua:#0c7c86;--line:#dce7e8;--paper:#f5f8f7}
+.stApp{background:radial-gradient(circle at 90% -10%,#d8eeee 0,transparent 30%),var(--paper)}
+.block-container{max-width:1380px;padding:2.2rem 3rem 4rem}
+html,body,[class*="css"],.stApp{font-family:'Noto Sans KR','Malgun Gothic',sans-serif;color:var(--ink)}
+h1,h2,h3{color:var(--ink)!important;letter-spacing:-.04em}
+.hero{padding:2.2rem 2.4rem;margin-bottom:1.15rem;border:1px solid rgba(255,255,255,.75);border-radius:24px;
+background:linear-gradient(120deg,#0b3740 0%,#0d6970 60%,#1a8b87 100%);box-shadow:0 18px 50px rgba(14,64,70,.16);color:white}
+.hero-kicker{font-size:.74rem;font-weight:700;letter-spacing:.18em;color:#9ce1dc;margin-bottom:.7rem}
+.hero-title{font-size:2.05rem;font-weight:700;letter-spacing:-.055em;line-height:1.2;margin:0 0 .55rem}
+.hero-copy{color:#d5eeee;font-size:.96rem;margin:0;max-width:720px}
+[data-testid="stTextInput"] label{font-weight:700;color:#27464d}
+[data-testid="stTextInput"] input{border-radius:14px;border:1px solid #cadbdd;background:#fff;height:3.2rem;padding-left:1rem}
+[data-testid="stTextInput"] input:focus{border-color:#16868b;box-shadow:0 0 0 3px rgba(22,134,139,.12)}
+.stTabs [data-baseweb="tab-list"]{gap:.35rem;background:#e9f0ef;padding:.36rem;border-radius:14px;flex-wrap:wrap}
+.stTabs [data-baseweb="tab"]{height:44px;border-radius:10px;padding:0 1.05rem;color:#5f7479;font-size:.88rem}
+.stTabs [aria-selected="true"]{background:#fff!important;color:#0b6d75!important;font-weight:700;box-shadow:0 2px 10px rgba(25,63,68,.09)}
+[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;box-shadow:0 8px 25px rgba(30,66,70,.05)}
+[data-testid="stAlert"]{border-radius:14px;border-width:1px}
+iframe{border-radius:18px;box-shadow:0 10px 30px rgba(27,61,66,.09)}
+hr{border-color:#dbe6e6!important}
+.source-note{padding:.8rem 1rem;background:#eef5f4;border-left:3px solid #19858a;border-radius:4px 12px 12px 4px;color:#486268;font-size:.88rem;margin:.35rem 0 1rem}
+.weather-table-wrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
+.weather-table{width:100%;border-collapse:collapse;font-size:.88rem;color:#17323a}
+.weather-table th{position:sticky;top:0;background:#e7f1f0;color:#17464d;padding:.7rem;text-align:center;z-index:1}
+.weather-table td{padding:.62rem .7rem;border-top:1px solid #e8eeee;text-align:center;white-space:nowrap}
+.weather-table tr:nth-child(even){background:#f8fbfa}
+.lc-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:.5rem 0 1rem}
+.lc-group{background:#fff;border:1px solid #dce7e8;border-radius:14px;padding:13px 14px;box-shadow:0 5px 16px rgba(26,64,69,.045)}
+.lc-group-title{font-weight:700;color:#17464d;font-size:.9rem;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid #e7eeee}
+.lc-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px}
+.lc-item{display:flex;align-items:center;min-width:0;font-size:.78rem;color:#304b51;line-height:1.25}
+.lc-swatch{width:18px;height:18px;border-radius:4px;border:1px solid rgba(20,45,50,.25);margin-right:7px;flex:0 0 18px}
+.lc-code{font-size:.68rem;color:#7a8d91;margin-left:4px}
+@media(max-width:768px){.block-container{padding:1.2rem .9rem}.hero{padding:1.5rem}.hero-title{font-size:1.55rem}.stTabs [data-baseweb="tab"]{padding:0 .65rem;font-size:.78rem}}
+@media(max-width:900px){.lc-legend{grid-template-columns:1fr}.lc-items{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>""", unsafe_allow_html=True)
+
+st.markdown("""<div class="hero"><div class="hero-kicker">GROUNDWATER · SPATIAL INTELLIGENCE</div>
+<div class="hero-title">지하수 공간정보 대시보드</div>
+<p class="hero-copy">GeoPandas·OSMnx 공간 레이어와 NetGraph 기상 연결망으로 지하수 주변 환경을 탐색합니다.</p></div>""", unsafe_allow_html=True)
+address = st.text_input("대한민국 주소 검색", value="대전광역시 유성구 과학로 124", placeholder="도로명 또는 지번 주소를 입력하세요")
+try:
+    KIGAM_API_KEY = st.secrets.get("KIGAM_API_KEY", "")
+except Exception:
+    KIGAM_API_KEY = ""
+
+@st.cache_data
+def get_coordinates(addr):
+    geolocator = Nominatim(user_agent="korea_gw_app")
+    parts = addr.replace(" 광역시","광역시").replace(" 특별시","특별시").split()
+    for i in range(len(parts),0,-1):
+        try:
+            loc = geolocator.geocode(" ".join(parts[:i]))
+            if loc: return loc.latitude, loc.longitude, (i==len(parts)), " ".join(parts[:i])
+        except: continue
+    return None,None,False,""
+
+@st.cache_data(ttl=86400)
+def get_real_weather(lat, lon):
+    """응답이 빠르고 값이 안정적인 최근 92일 Forecast API를 우선 사용."""
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+            "latitude":lat,"longitude":lon,"timezone":"Asia/Seoul","past_days":92,"forecast_days":1,
+            "daily":"weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum"
+        }, timeout=30)
+        if r.status_code==200: return r.json()
+    except: pass
+    try:
+        end = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=95)).strftime("%Y-%m-%d")
+        r = requests.get("https://archive-api.open-meteo.com/v1/archive", params={
+            "latitude":lat,"longitude":lon,"timezone":"Asia/Seoul","start_date":start,"end_date":end,
+            "daily":"weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum"
+        }, timeout=45)
+        if r.status_code==200: return r.json()
+    except: pass
+    return None
+
+@st.cache_data(ttl=3600)
+def get_current_weather(lat, lon):
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+            "latitude":lat,"longitude":lon,"timezone":"Asia/Seoul","forecast_days":1,
+            "current":"temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"
+        }, timeout=10)
+        if r.status_code==200: return r.json()
+    except: pass
+    return None
+
+@st.cache_data(ttl=3600)
+def get_air_quality(lat, lon):
+    try:
+        r = requests.get("https://air-quality-api.open-meteo.com/v1/air-quality", params={
+            "latitude":lat,"longitude":lon,"current":"pm10,pm2_5","timezone":"Asia/Seoul"
+        }, timeout=10)
+        if r.status_code==200: return r.json()
+    except: pass
+    return None
+
+@st.cache_data(ttl=86400)
+def get_land_use_osm(lat, lon, radius=1500):
+    query = f'[out:json][timeout:25];(way["landuse"](around:{radius},{lat},{lon}););out body;>;out skel qt;'
+    try:
+        r = requests.get("https://overpass-api.de/api/interpreter", params={"data":query}, timeout=30)
+        if r.status_code!=200: return None
+        data = r.json()
+        nodes = {e["id"]:[e["lat"],e["lon"]] for e in data.get("elements",[]) if e["type"]=="node"}
+        polys = []
+        for e in data.get("elements",[]):
+            if e["type"]=="way":
+                coords = [nodes[n] for n in e.get("nodes",[]) if n in nodes]
+                if len(coords)>=3:
+                    polys.append({"coords":coords,"type":e.get("tags",{}).get("landuse","unknown")})
+        return polys
+    except: return None
+
+@st.cache_data(ttl=86400)
+def get_geology_glim(lat, lon, span=0.08):
+    """검색 지점 주변의 실제 GLiM 지질 폴리곤을 GeoJSON으로 반환."""
+    url = "https://services8.arcgis.com/4KhTMTZ1x0f76DSg/arcgis/rest/services/GLiM_Niveau_I/FeatureServer/1/query"
+    params = {
+        "where":"1=1", "geometry":f"{lon-span},{lat-span},{lon+span},{lat+span}",
+        "geometryType":"esriGeometryEnvelope", "inSR":4326,
+        "spatialRel":"esriSpatialRelIntersects", "outFields":"Litho,xx,xx_Description",
+        "returnGeometry":"true", "outSR":4326, "f":"geojson"
+    }
+    try:
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        return data if data.get("features") else None
+    except Exception:
+        return None
+
+def wide_bounds(lat, lon, lat_span=0.08):
+    """가로형 지도 화면에 맞는 EPSG:4326 경계."""
+    lon_span = lat_span * 2.35 / max(math.cos(math.radians(lat)), 0.65)
+    return [[lat-lat_span, lon-lon_span], [lat+lat_span, lon+lon_span]]
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_static_basemap(bounds):
+    """브라우저 타일 차단을 피하기 위한 서버 측 정적 도로지도."""
+    south, west = bounds[0]
+    north, east = bounds[1]
+    params = {
+        "bbox":f"{west},{south},{east},{north}", "bboxSR":4326, "imageSR":4326,
+        "size":"1400,600", "format":"png32", "transparent":"false", "f":"image"
+    }
+    try:
+        r = requests.get(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/export",
+            params=params, timeout=40
+        )
+        r.raise_for_status()
+        return r.content if "image" in r.headers.get("Content-Type", "") else None
+    except Exception:
+        return None
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_kigam_geology_image(lat, lon, api_key, layer="L_50K_Geology_Map", lat_span=0.08):
+    """KIGAM WMS 이미지를 서버에서 받아 인증키가 브라우저에 노출되지 않게 반환."""
+    bounds = wide_bounds(lat, lon, lat_span)
+    south, west = bounds[0]
+    north, east = bounds[1]
+    params = {
+        "key":api_key, "SERVICE":"WMS", "VERSION":"1.1.1", "REQUEST":"GetMap",
+        "LAYERS":layer, "STYLES":"", "SRS":"EPSG:4326",
+        "BBOX":f"{west},{south},{east},{north}",
+        "WIDTH":1400, "HEIGHT":600, "FORMAT":"image/png", "TRANSPARENT":"TRUE"
+    }
+    try:
+        r = requests.get("https://data.kigam.re.kr/openapi/wms", params=params, timeout=40)
+        r.raise_for_status()
+        if "image" not in r.headers.get("Content-Type", ""):
+            return None
+        return r.content, bounds
+    except Exception:
+        return None
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_egis_landcover_image(lat, lon, lat_span=0.05):
+    """환경부 2025 전국 세분류 토지피복 WMS 이미지."""
+    bounds = wide_bounds(lat, lon, lat_span)
+    south, west = bounds[0]
+    north, east = bounds[1]
+    params = {
+        "SERVICE":"WMS", "VERSION":"1.1.1", "REQUEST":"GetMap",
+        "LAYERS":"EGIS:lv3_2025y", "STYLES":"", "SRS":"EPSG:4326",
+        "BBOX":f"{west},{south},{east},{north}", "WIDTH":1400, "HEIGHT":600,
+        "FORMAT":"image/png", "TRANSPARENT":"TRUE"
+    }
+    try:
+        r = requests.get("https://api.mcee.go.kr/geoserver/EGIS/wms", params=params, timeout=45)
+        r.raise_for_status()
+        if "image" not in r.headers.get("Content-Type", ""):
+            return None
+        return r.content, bounds
+    except Exception:
+        return None
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_egis_landcover_legend():
+    """환경부 WMS가 제공하는 공식 세분류 범례를 3단 형태로 반환."""
+    params = {
+        "SERVICE":"WMS", "VERSION":"1.1.1", "REQUEST":"GetLegendGraphic",
+        "FORMAT":"image/png", "LAYER":"EGIS:lv3_2025y",
+        "LEGEND_OPTIONS":"columns:3;fontSize:11"
+    }
+    try:
+        r = requests.get("https://api.mcee.go.kr/geoserver/EGIS/wms", params=params, timeout=40)
+        r.raise_for_status()
+        return r.content if "image" in r.headers.get("Content-Type", "") else None
+    except Exception:
+        return None
+
+def compose_static_map(base_bytes, bounds, overlay_bytes=None, opacity=.78,
+                       center=None, markers=None, size=(1400, 600)):
+    """지도 이미지를 서버에서 직접 합성해 iframe/Leaflet 없이 표시."""
+    try:
+        if base_bytes:
+            canvas = Image.open(BytesIO(base_bytes)).convert("RGBA").resize(size)
+        else:
+            canvas = Image.new("RGBA", size, "#eef2f1")
+        if overlay_bytes:
+            overlay = Image.open(BytesIO(overlay_bytes)).convert("RGBA").resize(size)
+            alpha = overlay.getchannel("A").point(lambda a: int(a * opacity))
+            overlay.putalpha(alpha)
+            canvas = Image.alpha_composite(canvas, overlay)
+
+        draw = ImageDraw.Draw(canvas)
+        south, west = bounds[0]
+        north, east = bounds[1]
+        def xy(point):
+            py, px = point
+            x = int((px-west) / (east-west) * size[0])
+            y = int((north-py) / (north-south) * size[1])
+            return x, y
+
+        if markers:
+            for idx, marker in enumerate(markers, 1):
+                x, y = xy(marker)
+                draw.ellipse((x-10,y-10,x+10,y+10), fill="#087f89", outline="white", width=3)
+                label = str(idx)
+                draw.text((x-3 if idx < 10 else x-6, y-7), label, fill="white")
+        if center:
+            x, y = xy(center)
+            draw.ellipse((x-9,y-9,x+9,y+9), fill="#e14b42", outline="white", width=4)
+
+        output = BytesIO()
+        canvas.convert("RGB").save(output, format="JPEG", quality=91, optimize=True)
+        return output.getvalue()
+    except Exception:
+        return None
+
+@st.cache_data(ttl=3600)
+def get_real_wells_osm(lat, lon, radius=10000):
+    """OSM에 실제 등록된 우물/지하수 관측시설의 이름과 좌표만 조회."""
+    query = f'''[out:json][timeout:35];(
+      node["man_made"="water_well"](around:{radius},{lat},{lon});
+      way["man_made"="water_well"](around:{radius},{lat},{lon});
+      relation["man_made"="water_well"](around:{radius},{lat},{lon});
+      node["man_made"="monitoring_station"]["monitoring:groundwater"](around:{radius},{lat},{lon});
+      way["man_made"="monitoring_station"]["monitoring:groundwater"](around:{radius},{lat},{lon});
+    );out center tags;'''
+    endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+    ]
+    data = None
+    for endpoint in endpoints:
+        try:
+            r = requests.get(endpoint, params={"data":query},
+                headers={"User-Agent":"KISTI-groundwater-dashboard/1.0"}, timeout=55)
+            if r.status_code == 200:
+                data = r.json()
+                break
+        except Exception:
+            continue
+    if not data:
+        return None
+    wells = []
+    for e in data.get("elements", []):
+        tags = e.get("tags", {})
+        center = e.get("center", {})
+        wy, wx = e.get("lat", center.get("lat")), e.get("lon", center.get("lon"))
+        if wy is None or wx is None:
+            continue
+        name = tags.get("name") or tags.get("name:ko") or tags.get("ref") or "이름 미등록"
+        wells.append({"관정명":name, "위도":round(wy, 6), "경도":round(wx, 6), "OSM ID":f"{e['type']}/{e['id']}"})
+    return pd.DataFrame(wells).drop_duplicates(subset=["위도","경도"]) if wells else pd.DataFrame(columns=["관정명","위도","경도","OSM ID"])
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def get_gims_wells(lat, lon, radius_km=5, max_features=5000):
+    """국가지하수정보센터(GIMS) 공개 WFS에서 주변 개발이용관정을 조회."""
+    lat_delta = radius_km / 111.0
+    lon_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), .35))
+    cql = (
+        f"BBOX(the_geom,{lon-lon_delta},{lat-lat_delta},"
+        f"{lon+lon_delta},{lat+lat_delta},'EPSG:4326')"
+    )
+    params = {
+        "service":"WFS", "version":"1.1.0", "request":"GetFeature",
+        "typeName":"igis_WFS:WT_PERMWELL_WGS",
+        "outputFormat":"application/json", "srsName":"EPSG:4326",
+        "maxFeatures":max_features, "CQL_FILTER":cql,
+    }
+    try:
+        response = requests.get(
+            "https://new.gims.go.kr/igis/gis-server/wfs",
+            params=params,
+            headers={
+                "User-Agent":"KISTI-groundwater-dashboard/2.0",
+                "Referer":"https://new.gims.go.kr/igis",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None, None
+
+    rows = []
+    type_names = {"1":"허가공", "2":"신고공", "0":"기타공"}
+    for feature in payload.get("features", []):
+        geometry = feature.get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
+        if geometry.get("type") != "Point" or len(coordinates) < 2:
+            continue
+        well_lon, well_lat = float(coordinates[0]), float(coordinates[1])
+        props = feature.get("properties") or {}
+        lat1, lat2 = math.radians(lat), math.radians(well_lat)
+        dlat = lat2 - lat1
+        dlon = math.radians(well_lon - lon)
+        hav = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+        distance = 6371.0088 * 2 * math.asin(min(1, math.sqrt(hav)))
+        if distance > radius_km:
+            continue
+        lot = ""
+        if props.get("BUNJI"):
+            lot = f"{'산 ' if str(props.get('SAN', '0')) == '1' else ''}{props['BUNJI']}"
+            if props.get("HO") and str(props["HO"]) not in ("0", "None"):
+                lot += f"-{props['HO']}"
+        address_parts = [
+            props.get("BRTC_NM"), props.get("SIGUN_NM"), props.get("EMD_NM"),
+            props.get("LI_NM"), lot,
+        ]
+        rows.append({
+            "관정번호":props.get("PERM_NT_NO") or props.get("objectid"),
+            "구분":type_names.get(str(props.get("PERM_NT_FO")), "기타공"),
+            "주소":" ".join(str(v).strip() for v in address_parts if v),
+            "용도":props.get("UWATER_SRV") or "-",
+            "굴착심도(m)":props.get("DPH"),
+            "양수능력(㎥/일)":props.get("RWT_CAP"),
+            "거리(km)":round(distance, 3),
+            "위도":round(well_lat, 7), "경도":round(well_lon, 7),
+        })
+    columns = ["관정번호","구분","주소","용도","굴착심도(m)","양수능력(㎥/일)","거리(km)","위도","경도"]
+    frame = pd.DataFrame(rows, columns=columns)
+    if not frame.empty:
+        frame = frame.sort_values("거리(km)").drop_duplicates("관정번호").reset_index(drop=True)
+    total = payload.get("totalFeatures")
+    meta = {
+        "total_bbox":int(total) if str(total).isdigit() else len(payload.get("features", [])),
+        "returned":len(payload.get("features", [])),
+        "truncated":len(payload.get("features", [])) >= max_features,
+    }
+    return frame, meta
+
+def geology_color(value):
+    palette = ["#547b72","#a56f59","#c49a55","#7d6b91","#6686a3","#8b9d62","#b67878","#4e8d8a"]
+    return palette[int(hashlib.md5(str(value).encode()).hexdigest(), 16) % len(palette)]
+
+def landcover_legend_html():
+    groups = []
+    for group_name, items in LANDCOVER_GROUPS.items():
+        rows = []
+        for code, name, rgb in items:
+            color = f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+            rows.append(
+                f'<div class="lc-item"><span class="lc-swatch" style="background:{color}"></span>'
+                f'<span>{name}<span class="lc-code">{code}</span></span></div>'
+            )
+        groups.append(
+            f'<div class="lc-group"><div class="lc-group-title">{group_name}</div>'
+            f'<div class="lc-items">{"".join(rows)}</div></div>'
+        )
+    return f'<div class="lc-legend">{"".join(groups)}</div>'
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_osmnx_layers(lat, lon, distance=1500):
+    """OSMnx로 도로망과 주변 공간객체를 GeoDataFrame으로 조회."""
+    empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    edges, features = empty.copy(), empty.copy()
+    try:
+        graph = ox.graph_from_point(
+            (lat, lon), dist=distance, network_type="all", simplify=True
+        )
+        _, edges = ox.graph_to_gdfs(graph)
+    except Exception:
+        pass
+    try:
+        features = ox.features_from_point(
+            (lat, lon),
+            tags={
+                "building": True,
+                "landuse": True,
+                "natural": ["wood", "water", "grassland"],
+                "leisure": ["park", "garden"],
+            },
+            dist=distance,
+        )
+    except Exception:
+        pass
+    return edges, features
+
+def _landuse_value(row):
+    for key in ("landuse", "natural", "leisure"):
+        value = row.get(key)
+        if pd.notna(value):
+            return str(value)
+    return "other"
+
+def _landuse_color(value):
+    colors = {
+        "residential":"#e8d8c8", "commercial":"#e9b7b1", "retail":"#efc2d7",
+        "industrial":"#d8c8df", "farmland":"#e8e3a5", "farm":"#e8e3a5",
+        "forest":"#9fc89d", "wood":"#8eb68b", "grass":"#c8dda9",
+        "grassland":"#c8dda9", "meadow":"#c8dda9", "park":"#b7d7ad",
+        "garden":"#c7dfb8", "water":"#9ecae1", "reservoir":"#9ecae1",
+        "basin":"#9ecae1", "construction":"#d8c1ac",
+    }
+    return colors.get(value, "#d9dfdc")
+
+def plot_osmnx_geopandas_map(lat, lon, distance=1500, mode="streets"):
+    """OSMnx 수집 결과를 GeoPandas 레이어로 투영해 정적 지도 생성."""
+    edges, features = get_osmnx_layers(lat, lon, distance)
+    if edges.empty and features.empty:
+        return None
+    crs_source = edges if not edges.empty else features
+    local_crs = crs_source.estimate_utm_crs()
+    center = gpd.GeoDataFrame(
+        {"name":["검색 위치"]}, geometry=[Point(lon, lat)], crs="EPSG:4326"
+    ).to_crs(local_crs)
+    x, y = center.geometry.iloc[0].x, center.geometry.iloc[0].y
+
+    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f5f8f7")
+    ax.set_facecolor("#eef2ef")
+    if not features.empty:
+        local_features = features.to_crs(local_crs).copy()
+        polygons = local_features[local_features.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
+        if not polygons.empty:
+            polygons["map_type"] = polygons.apply(_landuse_value, axis=1)
+            if mode == "landuse":
+                polygons.plot(
+                    ax=ax,
+                    color=[_landuse_color(v) for v in polygons["map_type"]],
+                    edgecolor="#ffffff", linewidth=.45, alpha=.88, zorder=1,
+                )
+            else:
+                non_building = polygons[polygons.get("building", pd.Series(index=polygons.index, dtype=object)).isna()]
+                buildings = polygons[polygons.get("building", pd.Series(index=polygons.index, dtype=object)).notna()]
+                if not non_building.empty:
+                    non_building.plot(ax=ax, color="#d8e4d4", edgecolor="none", alpha=.7, zorder=1)
+                if not buildings.empty:
+                    buildings.plot(ax=ax, color="#c8cecc", edgecolor="#aab4b1", linewidth=.25, zorder=2)
+    if not edges.empty:
+        local_edges = edges.to_crs(local_crs).copy()
+        widths = {"motorway":2.1, "trunk":1.9, "primary":1.7, "secondary":1.35,
+                  "tertiary":1.05, "residential":.72, "service":.45, "footway":.3}
+        highway = local_edges.get("highway", pd.Series("road", index=local_edges.index))
+        local_edges["line_width"] = highway.apply(
+            lambda v: widths.get(v[0] if isinstance(v, list) and v else v, .55)
+        )
+        local_edges.plot(
+            ax=ax, color="#ffffff" if mode == "landuse" else "#65777a",
+            linewidth=local_edges["line_width"], alpha=.95, zorder=3,
+        )
+    center.plot(ax=ax, color="#e14b42", edgecolor="white", linewidth=1.8, markersize=105, zorder=5)
+    ax.set_xlim(x-distance, x+distance)
+    ax.set_ylim(y-distance*.62, y+distance*.62)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    title = "OSM 토지이용 · 도로망" if mode == "landuse" else "OSM 도로 · 건물 · 녹지"
+    ax.set_title(title, loc="left", fontsize=15, fontweight="bold", color="#17383e", pad=12)
+    fig.tight_layout()
+    return fig
+
+def plot_weather_netgraph(df, days=90):
+    """날짜를 연결한 NetGraph: 색=평균기온, 크기=강수량."""
+    weather = df.tail(days).dropna(subset=["평균기온(℃)"]).copy()
+    if weather.empty:
+        return None
+    count = len(weather)
+    nodes = list(range(count))
+    edges = [(i, i + 1) for i in range(count - 1)]
+    temperatures = weather["평균기온(℃)"].astype(float).to_numpy()
+    rainfall = weather["강수량(mm)"].fillna(0).clip(lower=0).astype(float).to_numpy()
+    t_min, t_max = float(np.nanmin(temperatures)), float(np.nanmax(temperatures))
+    t_range = max(t_max - t_min, 1.0)
+    t_norm = (temperatures - t_min) / t_range
+    rain_scale = np.sqrt(rainfall / max(float(np.nanmax(rainfall)), 1.0))
+    positions = {
+        node:(.04 + .92 * node / max(count - 1, 1), .12 + .76 * t_norm[node])
+        for node in nodes
+    }
+    cmap = mpl.colormaps["coolwarm"]
+    node_colors = {node:cmap(t_norm[node]) for node in nodes}
+    # 90개 노드가 촘촘하므로 반지름을 작게 유지해 인접 노드/간선 겹침을 방지한다.
+    node_sizes = {node:.2 + .2 * rain_scale[node] for node in nodes}
+    label_step = max(1, count // 8)
+    labels = {
+        node:weather.index[node].strftime("%m/%d")
+        for node in nodes if node % label_step == 0 or node == count - 1
+    }
+    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f5f8f7")
+    ax.set_facecolor("#f5f8f7")
+    Graph(
+        edges, nodes=nodes, node_layout=positions, node_color=node_colors,
+        node_size=node_sizes, node_edge_color="white", node_edge_width=.02,
+        edge_color="#7a9194", edge_width=1.15, edge_alpha=.55,
+        node_labels=False, ax=ax,
+    )
+    for node, label in labels.items():
+        px, py = positions[node]
+        ax.text(px, py-.045, label, ha="center", va="top", fontsize=8, color="#314f54")
+    scalar = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(t_min, t_max), cmap=cmap)
+    cbar = fig.colorbar(scalar, ax=ax, fraction=.025, pad=.02)
+    cbar.set_label("평균기온 (℃)")
+    ax.set_title("날짜 연결망으로 본 기온과 강수", loc="left", fontsize=15,
+                 fontweight="bold", color="#17383e", pad=12)
+    fig.tight_layout()
+    return fig
+
+def render_map(map_object, height=450):
+    st_folium(
+        map_object, height=height, width=None,
+        returned_objects=[], use_container_width=True,
+    )
+
+if address:
+    with st.spinner("좌표 변환 중..."):
+        lat, lon, is_exact, matched = get_coordinates(address)
+    if lat and lon:
+        if not is_exact:
+            st.warning(f"인근 지역('{matched}')의 좌표로 대체합니다.")
+        else:
+            st.success(f"위치 확인! (위도: {lat:.4f}, 경도: {lon:.4f})")
+
+        tabs = st.tabs(["📍 기본정보","🗺️ 지형도","🌍 지질도","🏗️ 토지이용","⛅ 날씨/대기질","🚰 관정정보"])
+
+        with tabs[0]:
+            st.header("📍 검색 위치")
+            st.info(f"**주소:** {address}\n\n**좌표:** {lat:.6f}, {lon:.6f}")
+            basic_map = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True)
+            folium.Marker(
+                [lat, lon], tooltip="검색 위치", popup=address,
+                icon=folium.Icon(color="red", icon="info-sign"),
+            ).add_to(basic_map)
+            render_map(basic_map)
+            st.caption("빨간 표식: 검색 위치 · 기본지도: OpenStreetMap contributors")
+
+        with tabs[1]:
+            st.header("🗺️ 기본 지형도")
+            st.info("💡 **출처:** [OpenTopoMap](https://opentopomap.org/) — 등고선, 도로, 건물 등 지형 정보를 포함한 실제 지형도입니다.")
+            topo_map = folium.Map(location=[lat, lon], zoom_start=14, tiles=None, control_scale=True)
+            folium.TileLayer(
+                tiles="https://tile.opentopomap.org/{z}/{x}/{y}.png",
+                attr="Map data © OpenStreetMap contributors, SRTM | Map style © OpenTopoMap",
+                name="OpenTopoMap 지형도", max_zoom=17,
+            ).add_to(topo_map)
+            folium.Marker(
+                [lat, lon], tooltip="검색 위치", popup=address,
+                icon=folium.Icon(color="red", icon="info-sign"),
+            ).add_to(topo_map)
+            folium.LayerControl().add_to(topo_map)
+            render_map(topo_map, height=500)
+            st.caption("빨간 표식: 검색 위치 · 지도: OpenTopoMap · 자료: OpenStreetMap contributors, SRTM")
+
+        with tabs[2]:
+            st.header("지질도")
+            st.markdown('<div class="source-note">한국지질자원연구원(KIGAM) 1:50,000 수치지질도입니다. 브라우저 지도 타일을 사용하지 않고 서버에서 직접 합성합니다.</div>', unsafe_allow_html=True)
+            kigam_map = None
+            if KIGAM_API_KEY:
+                with st.spinner("KIGAM 수치지질도를 불러오는 중..."):
+                    kigam_map = get_kigam_geology_image(lat, lon, KIGAM_API_KEY)
+            if kigam_map:
+                geology_bytes, image_bounds = kigam_map
+                base_image = get_static_basemap(image_bounds)
+                geology_render = compose_static_map(
+                    base_image, image_bounds, geology_bytes, opacity=.78, center=(lat, lon)
+                )
+                if geology_render:
+                    st.image(geology_render, width="stretch")
+                    st.success("KIGAM 1:50,000 수치지질도를 표시했습니다.")
+                else:
+                    st.error("지질도 이미지 합성에 실패했습니다.")
+            else:
+                st.error("KIGAM 지질도를 불러오지 못했습니다. 인증키 또는 서비스 상태를 확인해 주세요.")
+            st.caption("빨간 점: 검색 위치 · 자료: 한국지질자원연구원(KIGAM) 1:50,000 수치지질도")
+
+        with tabs[3]:
+            st.header("토지이용도")
+            st.markdown('<div class="source-note">OSMnx로 OpenStreetMap의 landuse·natural·leisure 객체와 도로망을 가져오고, GeoPandas로 동일 투영좌표계에서 중첩한 지도입니다.</div>', unsafe_allow_html=True)
+            land_radius = st.select_slider(
+                "토지이용 조회 범위", options=[500, 1000, 1500, 2500], value=1500,
+                format_func=lambda x:f"반경 {x/1000:g} km", key="landuse_radius"
+            )
+            with st.spinner("OSM 토지이용 레이어를 구성하는 중..."):
+                land_fig = plot_osmnx_geopandas_map(lat, lon, distance=land_radius, mode="landuse")
+            if land_fig:
+                st.pyplot(land_fig, width="stretch")
+                plt.close(land_fig)
+                legend_items = {
+                    "주거":"residential", "상업":"commercial", "산업":"industrial",
+                    "농경지":"farmland", "산림":"forest", "초지·공원":"park", "수역":"water"
+                }
+                legend_html = " ".join(
+                    f'<span style="display:inline-flex;align-items:center;margin:4px 14px 4px 0">'
+                    f'<i style="width:14px;height:14px;background:{_landuse_color(value)};border:1px solid #aaa;margin-right:6px"></i>{label}</span>'
+                    for label, value in legend_items.items()
+                )
+                st.markdown(legend_html, unsafe_allow_html=True)
+            else:
+                st.warning("OSM 토지이용 데이터를 불러오지 못했습니다.")
+            st.caption("빨간 점: 검색 위치 · 자료: OpenStreetMap contributors · 처리: OSMnx + GeoPandas")
+
+        with tabs[4]:
+            st.header("⛅ 날씨 및 대기질")
+            st.info("💡 **출처:** [Open-Meteo](https://open-meteo.com/) 실시간 기상 + 최근 92일 | [Open-Meteo Air Quality](https://open-meteo.com/) 대기질")
+            cur_w = get_current_weather(lat, lon)
+            air = get_air_quality(lat, lon)
+            if cur_w and "current" in cur_w:
+                c = cur_w["current"]
+                ic, ds = WEATHER_CODES.get(c.get("weather_code",0),("❓","알수없음"))
+                st.subheader("📊 현재 날씨 (실시간)")
+                c1,c2,c3,c4 = st.columns(4)
+                c1.metric("날씨",f"{ic} {ds}")
+                c2.metric("기온",f"{c.get('temperature_2m','-')} ℃")
+                c3.metric("풍속",f"{c.get('wind_speed_10m','-')} km/h")
+                c4.metric("습도",f"{c.get('relative_humidity_2m','-')} %")
+            if air and "current" in air:
+                ac = air["current"]
+                pm10, pm25 = ac.get("pm10",0), ac.get("pm2_5",0)
+                a1, a2 = st.columns(2)
+                a1.metric("미세먼지(PM10)", f"{pm10} µg/m³", delta="좋음" if pm10<=30 else ("보통" if pm10<=80 else "나쁨"), delta_color="off" if pm10<=80 else "inverse")
+                a2.metric("초미세먼지(PM2.5)", f"{pm25} µg/m³", delta="좋음" if pm25<=15 else ("보통" if pm25<=35 else "나쁨"), delta_color="off" if pm25<=35 else "inverse")
+            st.markdown("---")
+            with st.spinner("최근 1년 기상 데이터 조회 중..."):
+                hist = get_real_weather(lat, lon)
+            if hist and "daily" in hist:
+                d = hist["daily"]
+                times = d.get("time", []) or []
+                row_count = len(times)
+                def aligned(key):
+                    values = list(d.get(key, []) or [])
+                    return (values + [None] * row_count)[:row_count]
+                codes = aligned("weather_code")
+                df = pd.DataFrame({
+                    "날짜": pd.to_datetime(times),
+                    "날씨": [" ".join(WEATHER_CODES.get(c,("❓","알 수 없음"))) if c is not None else "-" for c in codes],
+                    "평균기온(℃)": aligned("temperature_2m_mean"),
+                    "최고기온(℃)": aligned("temperature_2m_max"),
+                    "최저기온(℃)": aligned("temperature_2m_min"),
+                    "강수량(mm)": aligned("precipitation_sum"),
+                }).set_index("날짜")
+                numeric_cols = ["평균기온(℃)","최고기온(℃)","최저기온(℃)","강수량(mm)"]
+                for col in numeric_cols:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                if not df.empty:
+                    st.subheader(f"🌡️ NetGraph 기상 연결망 ({min(len(df), 90)}일)")
+                    weather_fig = plot_weather_netgraph(df, days=90)
+                    if weather_fig:
+                        st.pyplot(weather_fig, width="stretch")
+                        plt.close(weather_fig)
+                        st.caption("각 노드는 하루입니다. 왼쪽→오른쪽은 날짜 순서, 높이·색은 평균기온, 노드 크기는 강수량을 나타냅니다.")
+                    else:
+                        st.warning("NetGraph를 그릴 수 있는 기온 값이 없습니다.")
+                    with st.expander("📅 상세 데이터 표", expanded=True):
+                        period = st.selectbox("표시 기간", [7, 30, 90], index=1,
+                            format_func=lambda x:f"최근 {x}일", key="weather_table_period")
+                        display_df = df.reset_index().tail(period).sort_values("날짜", ascending=False)
+                        display_df["날짜"] = display_df["날짜"].dt.strftime("%Y-%m-%d")
+                        display_df[numeric_cols] = display_df[numeric_cols].round(1)
+                        display_df = display_df.fillna("-")
+                        table_html = display_df.to_html(index=False, border=0, classes="weather-table", escape=True)
+                        st.markdown(f'<div class="weather-table-wrap">{table_html}</div>', unsafe_allow_html=True)
+                        csv_data = df.reset_index().to_csv(index=False).encode("utf-8-sig")
+                        st.download_button("전체 기상 데이터 CSV 다운로드", csv_data,
+                            file_name="weather_daily.csv", mime="text/csv")
+                else:
+                    st.warning("일별 기상 값이 비어 있습니다. 잠시 후 다시 조회해 주세요.")
+            else:
+                st.error("기상 데이터를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.")
+
+        with tabs[5]:
+            st.header("주변 관정")
+            st.markdown('<div class="source-note">국가지하수정보센터(GIMS)의 공개 WFS에서 실제 개발이용관정(허가공·신고공·기타공)을 조회합니다.</div>', unsafe_allow_html=True)
+            radius_km = st.select_slider(
+                "조회 반경", options=[1, 2, 5, 10], value=5,
+                format_func=lambda x:f"{x} km", key="gims_radius"
+            )
+            with st.spinner("GIMS 등록 관정을 조회하는 중..."):
+                df_w, gims_meta = get_gims_wells(lat, lon, radius_km)
+            if df_w is not None and not df_w.empty:
+                df_w = df_w.copy()
+                df_w.insert(0, "번호", range(1, len(df_w)+1))
+                permit_count = int((df_w["구분"] == "허가공").sum())
+                report_count = int((df_w["구분"] == "신고공").sum())
+                c1, c2, c3 = st.columns(3)
+                c1.metric("반경 내 관정", f"{len(df_w):,}개")
+                c2.metric("허가공", f"{permit_count:,}개")
+                c3.metric("신고공", f"{report_count:,}개")
+
+                well_map = folium.Map(location=[lat, lon], zoom_start=12, control_scale=True)
+                folium.Marker(
+                    [lat, lon], tooltip="검색 위치",
+                    icon=folium.Icon(color="red", icon="home"),
+                ).add_to(well_map)
+                cluster = MarkerCluster(name="GIMS 개발이용관정").add_to(well_map)
+                marker_colors = {"허가공":"blue", "신고공":"green", "기타공":"gray"}
+                for _, row in df_w.head(1000).iterrows():
+                    popup = (
+                        f"<b>{row['구분']} · {row['관정번호']}</b><br>"
+                        f"{row['주소']}<br>용도: {row['용도']}<br>"
+                        f"거리: {row['거리(km)']:.3f} km"
+                    )
+                    folium.Marker(
+                        [row["위도"], row["경도"]], popup=folium.Popup(popup, max_width=360),
+                        tooltip=f"{row['구분']} · {row['거리(km)']:.2f} km",
+                        icon=folium.Icon(color=marker_colors.get(row["구분"], "cadetblue"), icon="tint"),
+                    ).add_to(cluster)
+                folium.LayerControl().add_to(well_map)
+                render_map(well_map, height=520)
+                if len(df_w) > 1000:
+                    st.caption("지도 성능을 위해 가까운 관정 1,000개만 표기하며, 아래 표와 CSV에는 조회 결과 전체를 제공합니다.")
+                if gims_meta and gims_meta.get("truncated"):
+                    st.warning("선택 영역의 관정이 5,000개를 넘어 일부만 반환됐습니다. 조회 반경을 줄이면 더 정확한 거리순 결과를 볼 수 있습니다.")
+                visible_cols = ["번호","관정번호","구분","주소","용도","굴착심도(m)","양수능력(㎥/일)","거리(km)"]
+                st.dataframe(df_w[visible_cols], width="stretch", hide_index=True)
+                csv_data = df_w.drop(columns="번호").to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "GIMS 관정 목록 CSV 다운로드", csv_data,
+                    file_name=f"gims_wells_{radius_km}km.csv", mime="text/csv"
+                )
+            elif df_w is not None:
+                st.info(f"GIMS에서 반경 {radius_km} km 안의 개발이용관정을 찾지 못했습니다.")
+            else:
+                st.warning("GIMS 관정 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+            st.caption("자료: 국가지하수정보센터(GIMS) 지하수정보지도 · 빨간 표식: 검색 위치")
+            st.link_button("GIMS 지하수정보지도에서 확인", "https://new.gims.go.kr/igis")
+    else:
+        st.error("주소를 좌표로 변환할 수 없습니다.")
+
+st.markdown("---")
+st.markdown("""
+### 📚 데이터 출처
+| 분류 | 출처 | 유형 |
+|------|------|------|
+| 기본 지형도 | [OpenTopoMap](https://opentopomap.org/) | ✅ 등고선·도로·건물·SRTM |
+| 지질도 | [한국지질자원연구원 KIGAM](https://data.kigam.re.kr/) | ✅ 1:50,000 수치지질도 |
+| 토지이용 | [OpenStreetMap](https://www.openstreetmap.org/) | ✅ OSMnx + GeoPandas |
+| 기상 | [Open-Meteo](https://open-meteo.com/) | ✅ 실제 · NetGraph 시각화 |
+| 대기질 | [Open-Meteo Air Quality](https://open-meteo.com/) | ✅ 실제 |
+| 관정 | [국가지하수정보센터 GIMS](https://new.gims.go.kr/igis) | ✅ 개발이용관정 공개 WFS |
+""")
+st.caption("© 2026 AQUA · Groundwater Spatial Intelligence")
