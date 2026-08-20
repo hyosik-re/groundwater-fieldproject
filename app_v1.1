@@ -80,47 +80,73 @@ LANDCOVER_GROUPS = {
 
 st.set_page_config(page_title="AQUA · 지하수 공간정보", layout="wide", page_icon="◉")
 st.markdown("""<style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
-:root{--ink:#102a33;--muted:#667b82;--aqua:#0c7c86;--line:#dce7e8;--paper:#f5f8f7}
-.stApp{background:radial-gradient(circle at 90% -10%,#d8eeee 0,transparent 30%),var(--paper)}
-.block-container{max-width:1380px;padding:2.2rem 3rem 4rem}
-html,body,[class*="css"],.stApp{font-family:'Noto Sans KR','Malgun Gothic',sans-serif;color:var(--ink)}
-h1,h2,h3{color:var(--ink)!important;letter-spacing:-.04em}
-.hero{padding:2.2rem 2.4rem;margin-bottom:1.15rem;border:1px solid rgba(255,255,255,.75);border-radius:24px;
-background:linear-gradient(120deg,#0b3740 0%,#0d6970 60%,#1a8b87 100%);box-shadow:0 18px 50px rgba(14,64,70,.16);color:white}
-.hero-kicker{font-size:.74rem;font-weight:700;letter-spacing:.18em;color:#9ce1dc;margin-bottom:.7rem}
-.hero-title{font-size:2.05rem;font-weight:700;letter-spacing:-.055em;line-height:1.2;margin:0 0 .55rem}
-.hero-copy{color:#d5eeee;font-size:.96rem;margin:0;max-width:720px}
-[data-testid="stTextInput"] label{font-weight:700;color:#27464d}
-[data-testid="stTextInput"] input{border-radius:14px;border:1px solid #cadbdd;background:#fff;height:3.2rem;padding-left:1rem}
-[data-testid="stTextInput"] input:focus{border-color:#16868b;box-shadow:0 0 0 3px rgba(22,134,139,.12)}
-.stTabs [data-baseweb="tab-list"]{gap:.35rem;background:#e9f0ef;padding:.36rem;border-radius:14px;flex-wrap:wrap}
-.stTabs [data-baseweb="tab"]{height:44px;border-radius:10px;padding:0 1.05rem;color:#5f7479;font-size:.88rem}
-.stTabs [aria-selected="true"]{background:#fff!important;color:#0b6d75!important;font-weight:700;box-shadow:0 2px 10px rgba(25,63,68,.09)}
-[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;box-shadow:0 8px 25px rgba(30,66,70,.05)}
-[data-testid="stAlert"]{border-radius:14px;border-width:1px}
-iframe{border-radius:18px;box-shadow:0 10px 30px rgba(27,61,66,.09)}
-hr{border-color:#dbe6e6!important}
-.source-note{padding:.8rem 1rem;background:#eef5f4;border-left:3px solid #19858a;border-radius:4px 12px 12px 4px;color:#486268;font-size:.88rem;margin:.35rem 0 1rem}
-.weather-table-wrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
-.weather-table{width:100%;border-collapse:collapse;font-size:.88rem;color:#17323a}
-.weather-table th{position:sticky;top:0;background:#e7f1f0;color:#17464d;padding:.7rem;text-align:center;z-index:1}
-.weather-table td{padding:.62rem .7rem;border-top:1px solid #e8eeee;text-align:center;white-space:nowrap}
-.weather-table tr:nth-child(even){background:#f8fbfa}
-.lc-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:.5rem 0 1rem}
-.lc-group{background:#fff;border:1px solid #dce7e8;border-radius:14px;padding:13px 14px;box-shadow:0 5px 16px rgba(26,64,69,.045)}
-.lc-group-title{font-weight:700;color:#17464d;font-size:.9rem;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid #e7eeee}
+@import url('https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600&family=Noto+Sans+KR:wght@400;500;600&display=swap');
+:root{--green:#97be32;--green-dark:#779627;--ink:#4a4a4a;--muted:#888;--line:#e5e5df;--paper:#f7f7f7;--panel:#fff;--dark:#393f44}
+html,body,[class*="css"],.stApp{font-family:'Fira Sans','Noto Sans KR','Malgun Gothic',sans-serif;color:var(--ink)}
+.stApp{background:var(--paper)}
+header[data-testid="stHeader"]{background:transparent;height:2.4rem}
+.block-container{max-width:1540px;padding:1rem 2rem 4rem}
+h1,h2,h3{font-weight:500!important;color:#444!important;letter-spacing:-.025em}
+h2{font-size:1.45rem!important;margin:.85rem 0 .65rem!important}
+h3{font-size:1.08rem!important}
+.gnw-header{height:64px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;margin-bottom:0;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.gnw-brand{display:flex;align-items:center;gap:11px;color:#555;font-size:1.02rem;font-weight:600;letter-spacing:.04em}
+.gnw-brand small{display:block;color:#999;font-size:.62rem;font-weight:400;letter-spacing:.14em;margin-top:2px}
+.brand-mark{width:34px;height:34px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:1rem;font-weight:600;transform:rotate(45deg);border-radius:3px}
+.brand-mark b{transform:rotate(-45deg);font-weight:600}
+.gnw-nav{display:flex;align-items:center;gap:22px;color:#777;font-size:.72rem;letter-spacing:.08em}
+.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(151,190,50,.16);margin-right:7px}
+.hero{display:flex;align-items:center;justify-content:space-between;gap:30px;padding:22px 25px;background:var(--dark);border:0;border-radius:0;margin:0 0 16px;color:#fff;box-shadow:0 2px 7px rgba(0,0,0,.12)}
+.hero-main{min-width:0}
+.hero-kicker{font-size:.67rem;font-weight:500;letter-spacing:.18em;color:var(--green);margin-bottom:7px}
+.hero-title{font-size:1.68rem;font-weight:500;letter-spacing:-.035em;line-height:1.2;margin:0 0 5px}
+.hero-copy{color:#d6d6d9;font-size:.85rem;font-weight:300;margin:0;max-width:760px}
+.hero-meta{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.hero-meta span{border:1px solid #62696e;background:#444b50;color:#e5e5df;padding:7px 10px;font-size:.62rem;letter-spacing:.08em;white-space:nowrap}
+[data-testid="stTextInput"]{background:#fff;border:1px solid var(--line);padding:12px 14px 14px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+[data-testid="stTextInput"] label{font-weight:500;color:#555;font-size:.78rem;letter-spacing:.02em}
+[data-testid="stTextInput"] input{border-radius:1px;border:1px solid #ccc;background:#fff;height:2.8rem;padding-left:.9rem;color:#444}
+[data-testid="stTextInput"] input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(151,190,50,.18)}
+.stTabs [data-baseweb="tab-list"]{gap:0;background:#fff;padding:0;border:1px solid var(--line);border-bottom:2px solid var(--green);border-radius:0;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.stTabs [data-baseweb="tab"]{height:47px;border-radius:0;padding:0 1.1rem;color:#777;font-size:.79rem;border-right:1px solid #eee}
+.stTabs [data-baseweb="tab"]:hover{background:#f7f7f7;color:#555}
+.stTabs [aria-selected="true"]{background:var(--green)!important;color:#fff!important;font-weight:500;box-shadow:none}
+.stTabs [data-baseweb="tab-highlight"]{display:none}
+.stTabs [data-baseweb="tab-border"]{display:none}
+[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-radius:0;padding:.85rem 1rem;box-shadow:0 1px 3px rgba(0,0,0,.05);border-top:3px solid var(--green)}
+[data-testid="stMetricLabel"]{color:#888;font-size:.72rem}
+[data-testid="stMetricValue"]{color:#4a4a4a;font-weight:500}
+[data-testid="stAlert"]{border-radius:0;border:1px solid var(--line);border-left:4px solid var(--green);background:#fff;color:#555}
+[data-testid="stExpander"]{border:1px solid var(--line)!important;border-radius:0!important;background:#fff}
+[data-testid="stDataFrame"]{border:1px solid var(--line);background:#fff}
+.stButton>button,.stDownloadButton>button,.stLinkButton>a{border-radius:1px!important;border:1px solid var(--green-dark)!important;background:var(--green)!important;color:#fff!important;font-weight:500!important;box-shadow:none!important}
+.stButton>button:hover,.stDownloadButton>button:hover,.stLinkButton>a:hover{background:var(--green-dark)!important;border-color:var(--green-dark)!important}
+iframe{border-radius:0!important;border:1px solid var(--line);box-shadow:0 2px 7px rgba(0,0,0,.08)}
+hr{border-color:var(--line)!important}
+.source-note{padding:.75rem .9rem;background:#fff;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:0;color:#666;font-size:.8rem;margin:.35rem 0 1rem}
+.weather-table-wrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:0;background:#fff}
+.weather-table{width:100%;border-collapse:collapse;font-size:.82rem;color:#555}
+.weather-table th{position:sticky;top:0;background:#555;color:#fff;padding:.68rem;text-align:center;z-index:1;font-weight:500}
+.weather-table td{padding:.6rem .7rem;border-top:1px solid #eee;text-align:center;white-space:nowrap}
+.weather-table tr:nth-child(even){background:#f7f7f7}
+.lc-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:.5rem 0 1rem}
+.lc-group{background:#fff;border:1px solid var(--line);border-radius:0;padding:12px 13px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.lc-group-title{font-weight:500;color:#555;font-size:.84rem;margin-bottom:8px;padding-bottom:7px;border-bottom:2px solid var(--green)}
 .lc-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px}
-.lc-item{display:flex;align-items:center;min-width:0;font-size:.78rem;color:#304b51;line-height:1.25}
-.lc-swatch{width:18px;height:18px;border-radius:4px;border:1px solid rgba(20,45,50,.25);margin-right:7px;flex:0 0 18px}
-.lc-code{font-size:.68rem;color:#7a8d91;margin-left:4px}
-@media(max-width:768px){.block-container{padding:1.2rem .9rem}.hero{padding:1.5rem}.hero-title{font-size:1.55rem}.stTabs [data-baseweb="tab"]{padding:0 .65rem;font-size:.78rem}}
-@media(max-width:900px){.lc-legend{grid-template-columns:1fr}.lc-items{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.lc-item{display:flex;align-items:center;min-width:0;font-size:.75rem;color:#666;line-height:1.25}
+.lc-swatch{width:16px;height:16px;border-radius:0;border:1px solid rgba(0,0,0,.2);margin-right:7px;flex:0 0 16px}
+.lc-code{font-size:.65rem;color:#aaa;margin-left:4px}
+@media(max-width:900px){.block-container{padding:.6rem .7rem 3rem}.gnw-header{padding:0 13px}.gnw-nav{display:none}.hero{align-items:flex-start;flex-direction:column;padding:18px}.hero-title{font-size:1.4rem}.hero-meta{justify-content:flex-start}.stTabs [data-baseweb="tab"]{padding:0 .65rem;font-size:.72rem}.lc-legend{grid-template-columns:1fr}.lc-items{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>""", unsafe_allow_html=True)
 
-st.markdown("""<div class="hero"><div class="hero-kicker">GROUNDWATER · SPATIAL INTELLIGENCE</div>
-<div class="hero-title">지하수 공간정보 대시보드</div>
-<p class="hero-copy">GeoPandas·OSMnx 공간 레이어와 NetGraph 기상 연결망으로 지하수 주변 환경을 탐색합니다.</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div class="gnw-header">
+<div class="gnw-brand"><span class="brand-mark"><b>A</b></span><div>AQUA<small>GROUNDWATER WATCH</small></div></div>
+<div class="gnw-nav"><span><i class="live-dot"></i>LIVE DATA</span><span>MAP EXPLORER</span><span>KOREA</span></div>
+</div>
+<div class="hero"><div class="hero-main"><div class="hero-kicker">EXPLORE · ANALYZE · MONITOR</div>
+<div class="hero-title">지하수 공간정보 탐색기</div>
+<p class="hero-copy">주소 한 곳에서 지형·지질·토지이용·기상과 GIMS 등록 관정을 통합 탐색합니다.</p></div>
+<div class="hero-meta"><span>GIMS WELLS</span><span>OSM SPATIAL</span><span>OPEN-METEO</span></div></div>""", unsafe_allow_html=True)
 address = st.text_input("대한민국 주소 검색", value="대전광역시 유성구 과학로 124", placeholder="도로명 또는 지번 주소를 입력하세요")
 try:
     KIGAM_API_KEY = st.secrets.get("KIGAM_API_KEY", "")
@@ -526,8 +552,8 @@ def plot_osmnx_geopandas_map(lat, lon, distance=1500, mode="streets"):
     ).to_crs(local_crs)
     x, y = center.geometry.iloc[0].x, center.geometry.iloc[0].y
 
-    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f5f8f7")
-    ax.set_facecolor("#eef2ef")
+    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f7f7f7")
+    ax.set_facecolor("#ffffff")
     if not features.empty:
         local_features = features.to_crs(local_crs).copy()
         polygons = local_features[local_features.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
@@ -564,7 +590,7 @@ def plot_osmnx_geopandas_map(lat, lon, distance=1500, mode="streets"):
     ax.set_aspect("equal")
     ax.axis("off")
     title = "OSM 토지이용 · 도로망" if mode == "landuse" else "OSM 도로 · 건물 · 녹지"
-    ax.set_title(title, loc="left", fontsize=15, fontweight="bold", color="#17383e", pad=12)
+    ax.set_title(title, loc="left", fontsize=15, fontweight="bold", color="#4a4a4a", pad=12)
     fig.tight_layout()
     return fig
 
@@ -595,22 +621,22 @@ def plot_weather_netgraph(df, days=90):
         node:weather.index[node].strftime("%m/%d")
         for node in nodes if node % label_step == 0 or node == count - 1
     }
-    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f5f8f7")
-    ax.set_facecolor("#f5f8f7")
+    fig, ax = plt.subplots(figsize=(14, 6.2), facecolor="#f7f7f7")
+    ax.set_facecolor("#ffffff")
     Graph(
         edges, nodes=nodes, node_layout=positions, node_color=node_colors,
         node_size=node_sizes, node_edge_color="white", node_edge_width=.02,
-        edge_color="#7a9194", edge_width=1.15, edge_alpha=.55,
+        edge_color="#999999", edge_width=1.15, edge_alpha=.55,
         node_labels=False, ax=ax,
     )
     for node, label in labels.items():
         px, py = positions[node]
-        ax.text(px, py-.045, label, ha="center", va="top", fontsize=8, color="#314f54")
+        ax.text(px, py-.045, label, ha="center", va="top", fontsize=8, color="#555555")
     scalar = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(t_min, t_max), cmap=cmap)
     cbar = fig.colorbar(scalar, ax=ax, fraction=.025, pad=.02)
     cbar.set_label("평균기온 (℃)")
     ax.set_title("날짜 연결망으로 본 기온과 강수", loc="left", fontsize=15,
-                 fontweight="bold", color="#17383e", pad=12)
+                 fontweight="bold", color="#4a4a4a", pad=12)
     fig.tight_layout()
     return fig
 
